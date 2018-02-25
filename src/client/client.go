@@ -75,6 +75,12 @@ func DoOperator(conn net.Conn) {
 			go SendJoinTable(conn)
 		}
 
+		if input == "V" {
+			fmt.Println("LeaveTable")
+
+			go SendLeaveTable(conn)
+		}
+
 		if input == "P" {
 			fmt.Println("ReadyGame")
 
@@ -92,7 +98,7 @@ func DoOperator(conn net.Conn) {
 func SendRegister(conn net.Conn) {
 	data := []byte(`{
 		"C2S_Register": {
-			"AccID": "zcwtop",
+			"AccID": "abc",
 			"PassWD": "123456",
 			"Sex": 1
 		}
@@ -167,6 +173,19 @@ func SendCreateTable(conn net.Conn) {
 func SendJoinTable(conn net.Conn) {
 	data := []byte(`{
 		"C2S_Game_JoinTable": {
+			"TableNo": 1000
+		}
+	}`)
+
+	m := make([]byte, 2+len(data))
+	binary.BigEndian.PutUint16(m, uint16(len(data)))
+	copy(m[2:], data)
+	conn.Write(m)
+}
+
+func SendLeaveTable (conn net.Conn) {
+	data := []byte(`{
+		"C2S_Game_LeaveTable": {
 			"TableNo": 1000
 		}
 	}`)
