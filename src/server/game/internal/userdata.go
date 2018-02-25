@@ -11,48 +11,19 @@ import (
 )
 
 var (
-	AllUsers 			= new(util.Map)						//所有在线玩家	map [accID]*User
+	UserAccIDMgr 		= new(util.Map)						//所有在线玩家   map [accID]*User
+	UserIDMgr			= new(util.Map)						//所有在线玩家   map [userID]*User
 	UsersGameInfo 		= new(util.Map)						//玩家游戏信息   map[accID]*User
 )
 
-/*
-type UserGameData struct {
-	UserID 			int "_id"
-	AccID  			string
-	TableNo			uint
-	Playing			bool
-}
-
-func (data *UserGameData) initValue(accID string) error {
-	userID, err := mongoDBNextSeq("users")
-	if err != nil {
-		return fmt.Errorf("get next users id error: %v", err)
-	}
-
-	data.UserID = userID
-	data.AccID = accID
-
-	return nil
-}
-
-func (data *UserGameData) setInfo(gameType int, tableNo uint) {
-	data.TableNo = tableNo
-}
-
-func (data *UserGameData) setPlaying(playing bool) {
-	data.Playing = playing
-}
-*/
-
-
 //userinfo 用户基本信息
 type UserInfo struct {
-	UserID 			int "_id"
-	AccID  			string
-	PassWD			string
-	Sex				int
-	Money			int
-	Level			int
+	UserID 				int "_id"
+	AccID  				string
+	PassWD				string
+	Sex					int
+	Money				int
+	Level				int
 }
 
 func (userInfo *UserInfo) initValue(accID string, passWD string, sex int) error {

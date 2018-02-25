@@ -27,6 +27,7 @@ func rpcNewAgent(args []interface{}) {
 	a.SetUserData(new(AgentInfo))
 }
 
+//处理注册
 func rpcUserRegister(args []interface{}) {
 	a := args[0].(gate.Agent)
 	accID := args[1].(string)
@@ -41,6 +42,7 @@ func rpcUserRegister(args []interface{}) {
 	checkAccIdExist(a, accID, passWD, sex)
 }
 
+//处理登录
 func rpcUserLogin(args []interface{}) {
 	a := args[0].(gate.Agent)
 	accID := args[1].(string)
@@ -61,43 +63,51 @@ func rpcUserLogin(args []interface{}) {
 		err := db.DB("game").C("users").Find(bson.M{"accid": accID}).One(userInfo)
 		if err != nil {
 			if err != mgo.ErrNotFound {
-				log.Error("查询错误")
+				log.Error("find error :%v", err)
 			} else {
-				log.Error("账号不存在")
-				return
+				log.Error("account not found :%v", err)
 			}
+			return
 		}
 	}, func() {
-		// login repeated
-		//oldUser := accIDUsers[accID]
-		oldUser := AllUsers.Get(accID)
+		//检测是否是断线重连
+		oldUser := UserAccIDMgr.Get(accID)
 		if oldUser != nil {
-			old := oldUser.(*User)
+			ou := oldUser.(*User)
 			m := &msg.S2C_Close{Err: msg.S2C_Close_LoginRepeated}
-			a.WriteMsg(m)
-			old.WriteMsg(m)
-			a.Close()
-			old.Close()
-			log.Debug("acc %v login repeated", accID)
+			ou.WriteMsg(m)
+			ou.Close()
+			log.Debug("acc %v login repeated, close old socket", accID)
+
+			//a.WriteMsg(m)
+			//a.Close()
 			return
 		}
 
-		// login
+		//login
 		newUser := new(User)
 		newUser.Agent = a
 		newUser.LinearContext = skeleton.NewLinearContext()
 		newUser.state = userLogin
 		newUser.userInfo = userInfo
 		a.UserData().(*AgentInfo).accID = accID
-		//accIDUsers[accID] = newUser
-		if AllUsers.Get(accID) != nil {
-			AllUsers.Set(accID, newUser)
+		a.UserData().(*AgentInfo).userID = userInfo.UserID
+
+		if UserAccIDMgr.Get(accID) == nil {
+			UserAccIDMgr.Set(accID, newUser)
 		} else {
-			AllUsers.Del(accID)
-			AllUsers.Set(accID, newUser)
+			UserAccIDMgr.Del(accID)
+			UserAccIDMgr.Set(accID, newUser)
 		}
 
-		newUser.login(accID, userInfo)
+		if UserIDMgr.Get(userInfo.UserID) == nil {
+			UserIDMgr.Set(userInfo.UserID, newUser)
+		} else {
+			UserIDMgr.Del(userInfo.UserID)
+			UserIDMgr.Set(userInfo.UserID, newUser)
+		}
+
+		newUser.login()
 	})
 }
 
@@ -108,7 +118,7 @@ func rpcCloseAgent(args []interface{}) {
 	a.SetUserData(nil)
 
 	//user := accIDUsers[accID]
-	acc := AllUsers.Get(accID)
+	acc := UserAccIDMgr.Get(accID)
 	if acc == nil {
 		return
 	}
@@ -122,6 +132,6 @@ func rpcCloseAgent(args []interface{}) {
 		user.state = userLogout
 	} else {
 		user.state = userLogout
-		user.logout(accID)
+		user.logout()
 	}
 }

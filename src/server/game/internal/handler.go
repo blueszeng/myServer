@@ -12,7 +12,7 @@ func handleMsg(m interface{}, h interface{}) {
 		// user
 		a := args[1].(gate.Agent)
 		//user := users[a.UserData().(*AgentInfo).userID]
-		user := AllUsers.Get(a.UserData().(*AgentInfo).accID)
+		user := UserAccIDMgr.Get(a.UserData().(*AgentInfo).accID)
 		if user == nil {
 			log.Debug("handleMsg error 账号不存在")
 			return

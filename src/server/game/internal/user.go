@@ -25,28 +25,21 @@ type User struct {
 	saveDBTimer 		*timer.Timer
 }
 
-func (user *User) login(accID string, userInfo *UserInfo) {
+func (user *User) login() {
 	// network closed
 	if user.state == userLogout {
-		user.logout(accID)
+		user.logout()
 		return
 	}
 
-	// ok
-	user.userInfo = userInfo
-	user.UserData().(*AgentInfo).userID = userInfo.UserID
 	user.onLogin()
 	user.autoSaveDB()
-
-	user.WriteMsg(&msg.S2C_Login_Ret{Ret: msg.S2C_Login_Ok})
-	log.Debug("login sucess: %v", accID)
 }
 
-func (user *User) logout(accID string) {
+func (user *User) logout() {
 	if user.userInfo != nil {
 		user.saveDBTimer.Stop()
 		user.onLogout()
-		//delete(users, user.data.UserID)
 	}
 
 	// save
@@ -56,16 +49,15 @@ func (user *User) logout(accID string) {
 			db := mongoDB.Ref()
 			defer mongoDB.UnRef(db)
 			userID := data.(*UserInfo).UserID
-			_, err := db.DB("game").C("users").
-				UpsertId(userID, data)
+			_, err := db.DB("game").C("users").UpsertId(userID, data)
 			if err != nil {
 				log.Error("save user %v data error: %v", userID, err)
 			}
 		}
-	}, func() {
-		//delete(accIDUsers, accID)
-		AllUsers.Del(accID)
-	})
+
+		UserAccIDMgr.Del(user.userInfo.AccID)
+		UserIDMgr.Del(user.userInfo.UserID)
+	}, nil)
 }
 
 func (user *User) autoSaveDB() {
@@ -78,8 +70,7 @@ func (user *User) autoSaveDB() {
 			db := mongoDB.Ref()
 			defer mongoDB.UnRef(db)
 			userID := data.(*UserInfo).UserID
-			_, err := db.DB("game").C("users").
-				UpsertId(userID, data)
+			_, err := db.DB("game").C("users").UpsertId(userID, data)
 			if err != nil {
 				log.Error("save user %v data error: %v", userID, err)
 			}
@@ -94,17 +85,19 @@ func (user *User) isOffline() bool {
 }
 
 func (user *User) onLogin() {
-
+	log.Debug("login sucess: %v", user.userInfo.AccID)
+	m := &msg.S2C_Login_Ret{Ret: msg.S2C_Login_Ok}
+	user.WriteMsg(m)
 }
 
 func (user *User) onLogout() {
-
+	log.Debug("loginout sucess: %v", user.userInfo.AccID)
 }
 
 //玩家创建桌子
 func (user *User) createTable(gameType int) {
 	user.Go(func() {
-		tableNo := 1000//tableNoMgr.PopFront()
+		tableNo := tableNoMgr.PopBack()
 		table := gameTableMgr.AddTable(gameType, tableNo)
 
 		log.Debug("createTable gameType:%v tableNo:%v", gameType, tableNo)
@@ -138,7 +131,6 @@ func (user *User) joinTable(tableNo int) {
 //离开桌子
 func (user *User) leaveTable(tableNo int) {
 	user.Go(func() {
-
 		no := 0
 		gameInfo := UsersGameInfo.Get(user.userInfo.AccID).(*GameInfo)
 		if gameInfo != nil {

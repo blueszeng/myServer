@@ -8,18 +8,17 @@ import (
 	"sync"
 	"server/msg"
 	"time"
-	"container/list"
 )
 
-//桌子状态
+
 const (
+	//桌子状态
 	TableStatus_Free	= 0
 	TableStatus_Play	= 1
 	TableStatus_End		= 2
-)
 
-//超时时间
-const (
+
+	//超时时间
 	OutCardTimerFlag	= 1
 	TimeOut_OutCard		= 5
 
@@ -28,19 +27,22 @@ const (
 
 	ReadyFlag			= 3
 	TimeOut_Ready		= 5
-)
 
-//检测类型
-const (
+
+	//检测类型
 	Action_OutCard		= 1
 	Action_GangCard		= 2
-)
 
-//结束类型
-const (
+
+	//结束类型
 	End_Normal			= 1
 	End_LiuJu			= 2
+
+
+	//桌子数量
+	Table_Max_Count	= 1000
 )
+
 
 var (
 	gameTableMgr 		*GameTableMgr						//桌子管理
@@ -56,6 +58,41 @@ func init () {
 }
 
 //号码管理
+type TableNoMgr struct {
+	l   				sync.Mutex							//锁
+	freeNos				[Table_Max_Count]int				//空闲中的号码
+	freeIndex			int									//空闲数量
+}
+
+func (mgr *TableNoMgr)Init() {
+	for i:=0; i<Table_Max_Count; i++ {
+		mgr.freeNos[i] = 1000 + i
+	}
+	mgr.freeIndex = Table_Max_Count-1
+}
+
+func (mgr *TableNoMgr)PopBack() int {
+	mgr.l.Lock()
+	defer mgr.l.Unlock()
+
+	no := mgr.freeNos[mgr.freeIndex]
+	mgr.freeNos[mgr.freeIndex] = 0
+	mgr.freeIndex--
+
+	return no
+}
+
+func (mgr *TableNoMgr) PushBack(no int) {
+	mgr.l.Lock()
+	defer mgr.l.Unlock()
+
+	if no != 0 {
+		mgr.freeIndex++
+		mgr.freeNos[mgr.freeIndex] = no
+	}
+}
+
+/*
 type TableNoMgr struct {
 	TableNos  		 	*list.List							//号码队列
 	l		   			sync.Mutex							//锁
@@ -86,6 +123,7 @@ func (mgr *TableNoMgr) PopFront() int {
 
 	return v.(int)
 }
+*/
 
 //桌子管理
 type GameTableMgr struct {
