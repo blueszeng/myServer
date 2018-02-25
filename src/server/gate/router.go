@@ -15,6 +15,7 @@ func init() {
 	// game
 	msg.Processor.SetRouter(&msg.C2S_Game_CreateTable{}, game.ChanRPC)
 	msg.Processor.SetRouter(&msg.C2S_Game_JoinTable{}, game.ChanRPC)
+	msg.Processor.SetRouter(&msg.C2S_Game_LeaveTable{}, game.ChanRPC)
 
 	msg.Processor.SetRouter(&msg.C2S_Game_Ready{}, game.ChanRPC)
 	msg.Processor.SetRouter(&msg.C2S_Game_OutCard{}, game.ChanRPC)

@@ -213,7 +213,7 @@ func (gamedata *GameData) DispatchStartCards() {
 }
 
 //获取发送的数据
-func (gamedata *GameData) GetNextCard(chairID int) int{
+func (gamedata *GameData) GetNextCard() int{
 
 	//如果到剩余牌数为EndLeftCount，则结束
 	if gamedata.leftCardCount <= EndLeftCount {
@@ -225,9 +225,6 @@ func (gamedata *GameData) GetNextCard(chairID int) int{
 
 	gamedata.leftCardCount--
 	gamedata.sendCardData = gamedata.repertoryCard[gamedata.leftCardCount]
-	gamedata.cardIndex[chairID][gamedata.switchToCardIndex(gamedata.sendCardData)]++
-	gamedata.provideUser = gamedata.currentUser
-	gamedata.provideCard = gamedata.sendCardData
 
 	return gamedata.sendCardData
 }
@@ -286,10 +283,14 @@ func (gamedata *GameData) switchToCardData(index int) int{
 
 //校验数据
 func (gamedata *GameData) IsValidCard(card int) bool {
+	color := (card&MaskColor)>>4
 	value := card&MaskValue
-	color := card&MaskColor
 
-	return (((value>=1)&&(value<=9)&&(color<=2))||((value>=1)&&(value<=15)&&(color==3)))
+	ret := (((value>=1)&&(value<=9)&&(color<=2))||((value>=1)&&(value<=15)&&(color==3)))
+	if ret == false {
+		log.Debug("color:%v  value:%v", color, value)
+	}
+	return ret
 }
 
 //动作等级

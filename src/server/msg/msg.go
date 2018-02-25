@@ -189,4 +189,3 @@ type C2S_Game_OperateCard struct {
 	OperateCard			int									//操作数据
 }
 
-

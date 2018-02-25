@@ -320,7 +320,7 @@ func (table *Table) StartGame() {
 				Sice2: table.gameData.sice2,
 				GameTax: 0,
 				BankerUser: bankerUser,
-				UserAction: table.gameData.userAction[bankerUser],
+				UserAction: table.gameData.userAction[i],
 				SendCard: sendCard,
 				CurrentUser: bankerUser,
 				CardIndex: table.gameData.UserCards(i)}
@@ -330,9 +330,9 @@ func (table *Table) StartGame() {
 
 		//set outcard timer
 		table.StopTimer(OutCardTimerFlag, -1)
+		log.Debug("start game 开启出牌定时器 chairID:%v currentID:%v", table.gameData.bankerUser, table.gameData.currentUser)
 		table.outCardTimer = skeleton.AfterFunc(TimeOut_OutCard * time.Second, func() {
 			table.Go(func() {
-				//log.Debug("start game 开启出牌定时器 chairID:%v currentID:%v", table.gameData.bankerUser, table.gameData.currentUser)
 				table.TimerOut_OutCard(table.gameData.bankerUser)
 			}, nil)
 		})
@@ -342,6 +342,14 @@ func (table *Table) StartGame() {
 //game end
 func (table *Table) End(endType int) {
 	log.Debug("table end")
+
+	table.StopTimer(OutCardTimerFlag, -1)
+	table.StopTimer(OperatorTimerFlag, -1)
+	table.readyInfo[0] = false
+	table.readyInfo[1] = false
+	table.status = TableStatus_End
+
+	table.gameData.Clean()
 }
 
 //outcard timer out
@@ -369,6 +377,7 @@ func (table *Table) DoOutCard(chairID int, card int) {
 
 		if table.gameData.IsValidCard(card) == false {
 			log.Error("非法数据 outuser:%v card:%v", chairID, card)
+
 			return
 		}
 
@@ -379,38 +388,43 @@ func (table *Table) DoOutCard(chairID int, card int) {
 		for i:=0; i<table.playerCount; i++ {
 			m := &msg.S2C_Game_OutCard{
 				OutUser: chairID,
-				CardData: card,
-				}
+				CardData: card}
 			table.users.Get(i).(*User).WriteMsg(m)
 		}
 
+		table.gameData.cardIndex[chairID][table.gameData.switchToCardIndex(card)]--
+		table.gameData.discardCard[chairID][table.gameData.discardCount[chairID]] = card
+		table.gameData.discardCount[chairID]++
+
 		table.gameData.outCardCount++
-		table.gameData.provideCard = card
-		table.gameData.provideUser = chairID
+		table.gameData.provideCard = 0
+		table.gameData.provideUser = -1
 		table.gameData.outCardData = card
 		table.gameData.outCardUser = chairID
 		table.gameData.gangStatus = false
 		table.gameData.sendStatus = true
-
 		table.gameData.currentUser = (chairID + PlayerCount - 1) % PlayerCount
 
 		if table.CheckAction(chairID, card, Action_OutCard) == false {
-			card := table.gameData.GetNextCard(chairID)
-			if card == -1 {
+			sendCard := table.gameData.GetNextCard()
+			if sendCard == -1 {
 				log.Debug("没有牌了，游戏结束")
 				table.End(End_LiuJu)
 				return
 			}
 
-			outChairID := table.gameData.outCardUser
-			outCard := table.gameData.outCardData
-			table.gameData.cardIndex[outChairID][table.gameData.switchToCardIndex(outCard)]--
-			table.gameData.discardCard[outChairID][table.gameData.discardCount[outChairID]] = outCard
-			table.gameData.discardCount[outChairID]++
+			table.gameData.cardIndex[table.gameData.currentUser][table.gameData.switchToCardIndex(sendCard)]++
+			table.gameData.provideUser = table.gameData.currentUser
+			table.gameData.provideCard = table.gameData.sendCardData
 
 			//log.Debug("current %v", table.gameData.currentUser)
-			table.SendACard(table.gameData.currentUser, card, false)
+			table.SendACard(table.gameData.currentUser, sendCard, false)
 		} else {
+			table.gameData.provideUser = chairID
+			table.gameData.provideCard = card
+			table.gameData.resumeUser = table.gameData.currentUser
+			table.gameData.currentUser = -1
+
 			table.SendOperateNotify()
 		}
 	}, nil)
@@ -418,6 +432,18 @@ func (table *Table) DoOutCard(chairID int, card int) {
 
 func (table *Table) TimerOut_OperatorCard(chairID int, action int, card int) {
 	log.Debug("操作定时器 user:%v card:%v action:%v", chairID, action, card)
+
+	//test
+	/*tmpAction := table.gameData.userAction[chairID]
+	if action&Wik_Peng != 0 {
+		action = Wik_Peng
+	} else if tmpAction&Wik_Left != 0 {
+		action = Wik_Left
+	} else if tmpAction&Wik_Center != 0 {
+		action = Wik_Center
+	} else if tmpAction&Wik_Right != 0 {
+		action = Wik_Right
+	}*/
 
 	table.DoOperator(chairID, action, card)
 }
@@ -489,14 +515,15 @@ func (table *Table) DoOperator(chairID int, action int, card int) {
 			}
 
 			if targetAction == Wik_Null {
-				card := table.gameData.GetNextCard(chairID)
-				if card == -1 {
+				sendCard := table.gameData.GetNextCard()
+				if sendCard == -1 {
 					log.Debug("没有牌了，游戏结束")
 					table.End(End_LiuJu)
 					return
 				}
 
-				table.SendACard(table.gameData.currentUser, card, false)
+				table.gameData.currentUser = table.gameData.resumeUser
+				table.SendACard(table.gameData.currentUser, sendCard, false)
 
 				return
 			}
@@ -572,17 +599,17 @@ func (table *Table) DoOperator(chairID int, action int, card int) {
 			table.gameData.currentUser = targetUser
 			if targetAction==Wik_Gang {
 				table.gameData.gangStatus = true
-
-				card := table.gameData.GetNextCard(chairID)
-				if card == -1 {
+				sendCard := table.gameData.GetNextCard()
+				if sendCard == -1 {
 					log.Debug("没有牌了，游戏结束")
 					table.End(End_LiuJu)
 					return
 				}
 
-				table.SendACard(targetUser, card, true)
+				table.SendACard(targetUser, sendCard, true)
 			} else {
 				//设置出牌定时器
+				table.StopTimer(OutCardTimerFlag, -1)
 				table.outCardTimer = skeleton.AfterFunc(TimeOut_OutCard * time.Second, func() {
 					table.Go(func() {
 						table.TimerOut_OutCard(chairID)
@@ -653,14 +680,14 @@ func (table *Table) DoOperator(chairID int, action int, card int) {
 				if aroseAction == false {
 					table.gameData.gangStatus = true
 
-					card := table.gameData.GetNextCard(chairID)
-					if card == -1 {
+					sendCard := table.gameData.GetNextCard()
+					if sendCard == -1 {
 						log.Debug("没有牌了，游戏结束")
 						table.End(End_LiuJu)
 						return
 					}
 
-					table.SendACard(chairID, card, true)
+					table.SendACard(chairID, sendCard, true)
 				}
 
 			} else if action == Wik_Hu {
@@ -702,12 +729,13 @@ func (table *Table) SendACard(chairID int, card int, tail bool) {
 
 			table.users.Get(i).(*User).WriteMsg(m)
 		}
+
 		//设置出牌定时器
 		table.StopTimer(OutCardTimerFlag, -1)
 		table.StopTimer(OperatorTimerFlag, -1)
+		log.Debug("SendACard 开启出牌定时器 chairID:%v currentID:%v", chairID, table.gameData.currentUser)
 		table.outCardTimer = skeleton.AfterFunc(TimeOut_OutCard * time.Second, func() {
 			table.Go(func() {
-				//log.Debug("SendACard 开启出牌定时器 chairID:%v currentID:%v", chairID, table.gameData.currentUser)
 				table.TimerOut_OutCard(chairID)
 			}, nil)
 		})
@@ -736,7 +764,8 @@ func (table *Table) CheckAction(chairID int, card int, actionType int) bool {
 		table.gameData.response[i] = false
 	}
 
-	return false
+	//直接返回，暂时不测试操作
+	//return false
 
 	hasAction := false
 	for  i:=0; i<table.playerCount; i++ {
@@ -765,10 +794,6 @@ func (table *Table) CheckAction(chairID int, card int, actionType int) bool {
 
 		if table.gameData.userAction[i] != Wik_Null {
 			hasAction = true
-			table.gameData.provideUser = chairID
-			table.gameData.provideCard = card
-			table.gameData.resumeUser = table.gameData.currentUser
-			table.gameData.currentUser = -1
 		}
 	}
 
@@ -776,7 +801,7 @@ func (table *Table) CheckAction(chairID int, card int, actionType int) bool {
 }
 
 func (table *Table) SendOperateNotify(){
-	/*for i:=0; i<table.playerCount; i++ {
+	for i:=0; i<table.playerCount; i++ {
 		if table.gameData.userAction[i] != 0 {
 			m := &msg.S2C_Game_OperateNotify{
 				ResumeUser: table.gameData.resumeUser,
@@ -785,55 +810,27 @@ func (table *Table) SendOperateNotify(){
 
 			table.users.Get(i).(*User).WriteMsg(m)
 
-			//设置操作定时器
-			table.StopTimer(OperatorTimerFlag, i)
-
-			log.Debug("1 i:%v", i)
-			table.operatorCardTimer[i] = skeleton.AfterFunc(TimeOut_Operator * time.Second, func() {
-				table.Go(func() {
-					log.Debug("2 i:%v", i)
-					table.TimerOut_OperatorCard(i, 0, table.gameData.provideCard)
-				}, nil)
-			})
+			//设置操作定时器  操蛋，外面的参数写在里面等到执行定时器的时候就变了。暂且这样分开写
+			if i == 0 {
+				table.StopTimer(OperatorTimerFlag, 0)
+				log.Debug("SendOperateNotify 开启操作定时器 chairID:%v currentID:%v", 0, table.gameData.currentUser)
+				table.operatorCardTimer[0] = skeleton.AfterFunc(TimeOut_Operator * time.Second, func() {
+					table.Go(func() {
+						log.Debug("执行操作定时器 chairID:%v currentID:%v", 0, table.gameData.currentUser)
+						table.TimerOut_OperatorCard(0, 0, table.gameData.provideCard)
+					}, nil)
+				})
+			} else if i == 1 {
+				table.StopTimer(OperatorTimerFlag, 1)
+				log.Debug("SendOperateNotify 开启操作定时器 chairID:%v currentID:%v", 1, table.gameData.currentUser)
+				table.operatorCardTimer[1] = skeleton.AfterFunc(TimeOut_Operator * time.Second, func() {
+					table.Go(func() {
+						log.Debug("执行操作定时器 chairID:%v currentID:%v", 1, table.gameData.currentUser)
+						table.TimerOut_OperatorCard(1, 0, table.gameData.provideCard)
+					}, nil)
+				})
+			}
 		}
-	}*/
-
-	//0
-	if table.gameData.userAction[0] != 0 {
-		m := &msg.S2C_Game_OperateNotify{
-			ResumeUser: table.gameData.resumeUser,
-			UserAction: table.gameData.userAction[0],
-			CardData: table.gameData.provideCard}
-
-		table.users.Get(0).(*User).WriteMsg(m)
-
-		//设置操作定时器
-		table.StopTimer(OperatorTimerFlag, 0)
-
-		table.operatorCardTimer[0] = skeleton.AfterFunc(TimeOut_Operator * time.Second, func() {
-			table.Go(func() {
-				table.TimerOut_OperatorCard(0, 0, table.gameData.provideCard)
-			}, nil)
-		})
-	}
-
-	//1
-	if table.gameData.userAction[1] != 0 {
-		m := &msg.S2C_Game_OperateNotify{
-			ResumeUser: table.gameData.resumeUser,
-			UserAction: table.gameData.userAction[1],
-			CardData: table.gameData.provideCard}
-
-		table.users.Get(1).(*User).WriteMsg(m)
-
-		//设置操作定时器
-		table.StopTimer(OperatorTimerFlag, 1)
-
-		table.operatorCardTimer[1] = skeleton.AfterFunc(TimeOut_Operator * time.Second, func() {
-			table.Go(func() {
-				table.TimerOut_OperatorCard(1, 0, table.gameData.provideCard)
-			}, nil)
-		})
 	}
 }
 
