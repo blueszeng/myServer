@@ -12,13 +12,13 @@ import (
 
 
 const (
-	//桌子状态
+	//table status
 	TableStatus_Free	= 0
 	TableStatus_Play	= 1
 	TableStatus_End		= 2
 
 
-	//超时时间
+	//timeout
 	OutCardTimerFlag	= 1
 	TimeOut_OutCard		= 5
 
@@ -29,17 +29,17 @@ const (
 	TimeOut_Ready		= 5
 
 
-	//检测类型
+	//check type
 	Action_OutCard		= 1
 	Action_GangCard		= 2
 
 
-	//结束类型
+	//end type
 	End_Normal			= 1
 	End_LiuJu			= 2
 
 
-	//桌子数量
+	//table count
 	Table_Max_Count	= 1000
 )
 
@@ -57,7 +57,7 @@ func init () {
 	tableNoMgr.Init()
 }
 
-//号码管理
+//number manager
 type TableNoMgr struct {
 	l   				sync.Mutex							//锁
 	freeNos				[Table_Max_Count]int				//空闲中的号码
@@ -92,40 +92,7 @@ func (mgr *TableNoMgr) PushBack(no int) {
 	}
 }
 
-/*
-type TableNoMgr struct {
-	TableNos  		 	*list.List							//号码队列
-	l		   			sync.Mutex							//锁
-}
-
-func (mgr *TableNoMgr) Init() {
-	mgr.TableNos = list.New()
-
-	for i:=0; i<1000; i++ {
-		mgr.TableNos.PushBack(i+1000)
-	}
-}
-
-func (mgr *TableNoMgr) PushBack(tableNo int) {
-	mgr.l.Lock()
-	defer mgr.l.Unlock()
-
-	mgr.TableNos.PushBack(tableNo)
-}
-
-func (mgr *TableNoMgr) PopFront() int {
-	mgr.l.Lock()
-	defer mgr.l.Unlock()
-
-	iter := mgr.TableNos.Back()
-	v := iter.Value
-	mgr.TableNos.Remove(iter)
-
-	return v.(int)
-}
-*/
-
-//桌子管理
+//table manager
 type GameTableMgr struct {
 	Tables 				*util.Map
 }
@@ -134,8 +101,8 @@ func (mgr *GameTableMgr) Init() {
 	mgr.Tables = new(util.Map)
 }
 
-//添加桌子
-func (mgr *GameTableMgr) AddTable(gameType int, tableNo int) *Table{
+//add new table
+func (mgr *GameTableMgr) AddTable(gameType int, tableNo int) *Table {
 	var table *Table
 	if mgr.Tables.Get(tableNo) == nil {
 		table = NewTable(gameType, tableNo)
@@ -150,7 +117,7 @@ func (mgr *GameTableMgr) AddTable(gameType int, tableNo int) *Table{
 	return table
 }
 
-//获取桌子
+//get a table
 func (mgr *GameTableMgr) GetTable(tableNo int) *Table {
 	if mgr.Tables.Get(tableNo) != nil {
 		return mgr.Tables.Get(tableNo).(*Table)
@@ -160,7 +127,7 @@ func (mgr *GameTableMgr) GetTable(tableNo int) *Table {
 	}
 }
 
-//删除桌子
+//delete a table
 func (mgr *GameTableMgr) DelTable(tableNo int) {
 	if mgr.Tables.Get(tableNo) != nil {
 		mgr.Tables.Del(tableNo)
@@ -169,13 +136,14 @@ func (mgr *GameTableMgr) DelTable(tableNo int) {
 	}
 }
 
-//游戏信息
+//game info for a user
 type GameInfo struct {
 	GameType 			int									//游戏类型
 	TableNo				int									//桌子号码
 	ChairID				int									//座位号码
 }
 
+//new a game info
 func NewGameInfo(gameType int, tableNo int, chairID int) *GameInfo {
 	gameInfo := new(GameInfo)
 	gameInfo.GameType = gameType
@@ -185,7 +153,7 @@ func NewGameInfo(gameType int, tableNo int, chairID int) *GameInfo {
 	return gameInfo
 }
 
-//创建桌子
+//new a table
 func NewTable(gameType int, tableNo int) *Table {
 	table := new(Table)
 	table.init(gameType, tableNo)
@@ -193,7 +161,7 @@ func NewTable(gameType int, tableNo int) *Table {
 	return table
 }
 
-//桌子结构
+//table info
 type Table struct {
 	*g.LinearContext
 	users				*util.Map							//玩家列表[pos]*User
@@ -210,6 +178,7 @@ type Table struct {
 	readyGameTimer		[PlayerCount]*timer.Timer			//准备定时器
 }
 
+//init the table
 func (table *Table) init(gameType int, tableNo int) {
 	table.LinearContext = skeleton.NewLinearContext()
 	table.users = new(util.Map)
@@ -225,12 +194,13 @@ func (table *Table) init(gameType int, tableNo int) {
 	}
 }
 
-//玩家进入桌子
+//user enter the table
 func (table *Table) EnterTable(user *User, gameType int, tableNo int) {
 	table.Go(func() {
 		accID := user.Agent.UserData().(*AgentInfo).accID
 		tmp := -1
 		for i:=0; i<table.playerCount; i++ {
+			//get empty pos
 			if table.users.Get(i) == nil {
 				log.Debug("accID:%v EnterTable sucess Pos:%v", accID, i)
 
@@ -246,9 +216,14 @@ func (table *Table) EnterTable(user *User, gameType int, tableNo int) {
 		}
 
 		gameInfo := NewGameInfo(gameType, tableNo, tmp)
-		UsersGameInfo.Set(accID, gameInfo)
+		if UsersGameInfo.Get(accID) == nil {
+			UsersGameInfo.Set(accID, gameInfo)
+		} else {
+			UsersGameInfo.Del(accID)
+			UsersGameInfo.Set(accID, gameInfo)
+		}
 
-		//进入玩家的信息发送给其他人
+		//send enter user info to other users
 		for i:=0; i<table.playerCount; i++ {
 			if i == tmp {
 				continue
@@ -261,7 +236,7 @@ func (table *Table) EnterTable(user *User, gameType int, tableNo int) {
 			}
 		}
 
-		//其他人信息发送给进入玩家
+		//send other users info to enter user
 		for i:=0; i<table.playerCount; i++ {
 			if i == tmp {
 				continue
@@ -280,16 +255,25 @@ func (table *Table) EnterTable(user *User, gameType int, tableNo int) {
 //玩家离开桌子
 func (table *Table) LeaveTable(user *User) {
 	if table.status == TableStatus_Play {
-		//游戏过程中无法退出
 		return
 	}
 
 	table.Go(func() {
 		accID := user.Agent.UserData().(*AgentInfo).accID
+		if table.users.Get(accID) == nil {
+			log.Error("accID:%v 不存在 LeaveTable", accID)
+			return
+		}
+
+		if UsersGameInfo.Get(accID) == nil {
+			log.Error("accID:%v gameinfo不存在 LeaveTable", accID)
+			return
+		}
+
 		gameInfo := UsersGameInfo.Get(accID).(*GameInfo)
 		log.Debug("accID:%v LeaveTable sucess Pos:%v", accID, gameInfo.ChairID)
 
-		//广播给其他玩家离开消息
+		//send msg to other users about your leave info
 		for i:=0; i<table.playerCount; i++ {
 			if i == gameInfo.ChairID {
 				continue
@@ -307,7 +291,9 @@ func (table *Table) LeaveTable(user *User) {
 		table.nowCount--
 	}, func(){
 		if table.nowCount == 0 {
-			log.Debug("房间解散")
+			log.Debug("房间解散 tableNo:%v", table.tableNo)
+
+			tableNoMgr.PushBack(table.tableNo)
 		}
 	})
 }
